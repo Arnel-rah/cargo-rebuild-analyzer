@@ -41,4 +41,14 @@ mod tests {
         assert_eq!(result.name, "tokio");
         assert_eq!(result.version, "1.48.0");
     }
+
+    #[test]
+    fn ignores_other_cargo_messages() {
+        assert!(parse_message(r#"{"reason":"build-finished","success":true}"#).is_none());
+    }
+
+    #[test]
+    fn ignores_malformed_messages() {
+        assert!(parse_message("not json").is_none());
+    }
 }
