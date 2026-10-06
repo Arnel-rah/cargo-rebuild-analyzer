@@ -1,20 +1,28 @@
 use std::io;
 use std::process::{Command, Stdio};
 
-pub fn run_build() -> io::Result<()> {
-    let status = Command::new("cargo")
+use crate::models::BuildReport;
+use crate::parser::parse_message;
+
+pub fn run_build() -> io::Result<BuildReport> {
+    let output = Command::new("cargo")
         .args(["build", "--message-format=json"])
         .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
+        .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
-        .status()?;
+        .output()?;
 
-    if !status.success() {
+    if !output.status.success() {
         return Err(io::Error::other(format!(
             "cargo build failed with status: {}",
-            status
+            output.status
         )));
     }
 
-    Ok(())
+    let compiled = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(parse_message)
+        .collect();
+
+    Ok(BuildReport { compiled })
 }
