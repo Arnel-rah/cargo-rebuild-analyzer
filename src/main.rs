@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 mod cargo;
 mod history;
@@ -11,6 +11,9 @@ mod parser;
     about = "Build a Cargo project and report the compiled crates"
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Build in release mode.
     #[arg(long)]
     release: bool,
@@ -24,8 +27,34 @@ struct Cli {
     package: Option<String>,
 }
 
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Show recorded build summaries.
+    History,
+
+    /// Explain why a crate was rebuilt.
+    Why {
+        /// Crate name to inspect.
+        crate_name: String,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(command) = cli.command {
+        let result = match command {
+            Commands::History => show_history(),
+            Commands::Why { crate_name } => show_why(&crate_name),
+        };
+
+        if let Err(error) = result {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let options = cargo::BuildOptions {
         release: cli.release,
         features: cli.features,
@@ -72,4 +101,65 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn show_history() -> std::io::Result<()> {
+    let history = history::load()?;
+
+    println!("Cargo Rebuild Analyzer history");
+    if history.builds.is_empty() {
+        println!("No builds recorded.");
+        return Ok(());
+    }
+
+    for (index, build) in history.builds.iter().enumerate() {
+        let rebuilt = build
+            .compiled
+            .iter()
+            .filter(|crate_build| !crate_build.fresh)
+            .count();
+        println!(
+            "{}. timestamp={} profile={} crates={} rebuilt={}{}",
+            index + 1,
+            build.timestamp,
+            if build.release { "release" } else { "debug" },
+            build.compiled.len(),
+            rebuilt,
+            build
+                .package
+                .as_deref()
+                .map_or(String::new(), |package| format!(" package={package}"))
+        );
+    }
+
+    Ok(())
+}
+
+fn show_why(crate_name: &str) -> std::io::Result<()> {
+    let history = history::load()?;
+    let observations: Vec<_> = history
+        .builds
+        .iter()
+        .flat_map(|build| build.compiled.iter())
+        .filter(|crate_build| crate_build.name == crate_name && !crate_build.fresh)
+        .collect();
+
+    if observations.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no rebuild recorded for crate '{crate_name}'"),
+        ));
+    }
+
+    println!("{crate_name}");
+    println!("  Rebuilt {} time(s)", observations.len());
+    let mut causes: Vec<&str> = observations
+        .iter()
+        .map(|crate_build| crate_build.likely_cause.as_str())
+        .collect();
+    causes.sort_unstable();
+    causes.dedup();
+    println!("  Likely cause: {}", causes.join(", "));
+
+    Ok(())
 }
