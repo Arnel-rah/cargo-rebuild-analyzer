@@ -66,10 +66,8 @@ fn main() {
             Ok(previous) => {
                 let rebuilt = report.compiled.iter().filter(|build| !build.fresh).count();
                 let fresh = report.compiled.iter().filter(|build| build.fresh).count();
-                let previous_count = previous
-                    .builds
-                    .last()
-                    .map_or(0, |build| build.compiled.len());
+                let previous_count =
+                    history::latest_for(&previous, &report).map_or(0, |build| build.compiled.len());
 
                 println!("Cargo Rebuild Analyzer");
                 println!();
@@ -77,7 +75,7 @@ fn main() {
                 println!("Crates rebuilt: {rebuilt}");
                 println!("Crates unchanged: {fresh}");
                 if previous_count > 0 {
-                    println!("Previous build: {previous_count} crate(s) analyzed");
+                    println!("Previous matching build: {previous_count} crate(s) analyzed");
                 }
                 println!();
 

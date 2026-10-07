@@ -32,3 +32,17 @@ pub fn record(mut history: BuildHistory, report: BuildReport) -> io::Result<()> 
         .map_err(|error| io::Error::other(format!("could not serialize build history: {error}")))?;
     fs::write(path, contents)
 }
+
+pub fn latest_for<'a>(history: &'a BuildHistory, report: &BuildReport) -> Option<&'a BuildReport> {
+    history
+        .builds
+        .iter()
+        .rev()
+        .find(|build| same_configuration(build, report))
+}
+
+fn same_configuration(left: &BuildReport, right: &BuildReport) -> bool {
+    left.release == right.release
+        && left.features == right.features
+        && left.package == right.package
+}
