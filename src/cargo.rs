@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use crate::models::{BuildReport, CrateBuild, DependencyNode};
-use crate::parser::parse_message;
+use crate::parser::{aggregate_builds, parse_message};
 
 #[derive(Debug, Default)]
 pub struct BuildOptions {
@@ -48,10 +48,11 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         )));
     }
 
-    let compiled: Vec<CrateBuild> = String::from_utf8_lossy(&output.stdout)
+    let parsed: Vec<CrateBuild> = String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(parse_message)
         .collect();
+    let compiled = aggregate_builds(parsed);
     let duration_ms = build_started.elapsed().as_millis() as u64;
     let rebuilt_count = compiled.iter().filter(|build| !build.fresh).count() as u64;
     let compiled_count = compiled.len() as u64;

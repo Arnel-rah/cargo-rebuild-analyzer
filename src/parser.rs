@@ -1,5 +1,6 @@
 use crate::models::CrateBuild;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 pub fn parse_message(line: &str) -> Option<CrateBuild> {
     let message: Value = serde_json::from_str(line).ok()?;
@@ -32,6 +33,46 @@ pub fn parse_message(line: &str) -> Option<CrateBuild> {
         fresh,
         likely_cause,
     })
+}
+
+pub fn aggregate_builds(builds: impl IntoIterator<Item = CrateBuild>) -> Vec<CrateBuild> {
+    let mut aggregated = BTreeMap::<(String, String), CrateBuild>::new();
+
+    for build in builds {
+        let key = (build.name.clone(), build.version.clone());
+        if let Some(existing) = aggregated.get_mut(&key) {
+            merge_build(existing, build);
+        } else {
+            aggregated.insert(key, build);
+        }
+    }
+
+    aggregated.into_values().collect()
+}
+
+fn merge_build(existing: &mut CrateBuild, incoming: CrateBuild) {
+    if existing.target_kind != incoming.target_kind {
+        let mut targets = existing
+            .target_kind
+            .split(", ")
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if !targets.iter().any(|target| target == &incoming.target_kind) {
+            targets.push(incoming.target_kind.clone());
+            targets.sort();
+            existing.target_kind = targets.join(", ");
+        }
+    }
+
+    if !incoming.fresh {
+        existing.fresh = false;
+    }
+
+    if existing.likely_cause == "source or dependency change"
+        && incoming.likely_cause != "source or dependency change"
+    {
+        existing.likely_cause = incoming.likely_cause;
+    }
 }
 
 fn package_name(package_id: &str) -> Option<String> {
@@ -130,4 +171,32 @@ mod tests {
         assert_eq!(result.target_kind, "build script");
         assert_eq!(result.likely_cause, "build script");
     }
+
+    #[test]
+    fn aggregates_targets_for_one_package() {
+        let builds = vec![
+            CrateBuild {
+                name: "serde".to_string(),
+                version: "1.0.0".to_string(),
+                target_kind: "build script".to_string(),
+                fresh: false,
+                likely_cause: "build script".to_string(),
+            },
+            CrateBuild {
+                name: "serde".to_string(),
+                version: "1.0.0".to_string(),
+                target_kind: "library".to_string(),
+                fresh: false,
+                likely_cause: "source or dependency change".to_string(),
+            },
+        ];
+
+        let result = aggregate_builds(builds);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].target_kind, "build script, library");
+        assert!(!result[0].fresh);
+        assert_eq!(result[0].likely_cause, "build script");
+    }
 }
+
