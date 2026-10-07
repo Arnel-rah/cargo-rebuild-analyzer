@@ -1,5 +1,6 @@
 use std::io;
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use crate::models::{BuildReport, CrateBuild};
 use crate::parser::parse_message;
@@ -33,6 +34,7 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         command.args(["--package", package]);
     }
 
+    let build_started = Instant::now();
     let output = command
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
@@ -50,6 +52,13 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         .lines()
         .filter_map(parse_message)
         .collect();
+    let duration_ms = build_started.elapsed().as_millis() as u64;
+    let rebuilt_count = compiled.iter().filter(|build| !build.fresh).count() as u64;
+    let compiled_count = compiled.len() as u64;
+    let estimated_wasted_ms = duration_ms
+        .saturating_mul(rebuilt_count)
+        .checked_div(compiled_count)
+        .unwrap_or(0);
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -58,6 +67,8 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
 
     Ok(BuildReport {
         timestamp,
+        duration_ms,
+        estimated_wasted_ms,
         release: options.release,
         features,
         package: options.package.clone(),

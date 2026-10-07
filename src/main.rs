@@ -66,6 +66,11 @@ fn main() {
                 println!("Crates analyzed: {}", report.compiled.len());
                 println!("Crates rebuilt: {rebuilt}");
                 println!("Crates unchanged: {fresh}");
+                println!("Build duration: {}", format_duration(report.duration_ms));
+                println!(
+                    "Estimated rebuild time: {}",
+                    format_duration(report.estimated_wasted_ms)
+                );
                 if previous_count > 0 {
                     println!("Previous matching build: {previous_count} crate(s) analyzed");
                 }
@@ -122,6 +127,11 @@ fn show_history() -> std::io::Result<()> {
                 .map_or(String::new(), |package| format!(" package={package}"))
         );
         println!(
+            "   duration={} estimated_rebuild_time={}",
+            format_duration(build.duration_ms),
+            format_duration(build.estimated_wasted_ms)
+        );
+        println!(
             "   features={}",
             if build.features.is_empty() {
                 "none".to_string()
@@ -132,6 +142,25 @@ fn show_history() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn format_duration(milliseconds: u64) -> String {
+    if milliseconds < 1_000 {
+        return format!("{milliseconds} ms");
+    }
+
+    let seconds = milliseconds / 1_000;
+    let remaining_milliseconds = milliseconds % 1_000;
+    if seconds < 60 {
+        return format!("{seconds}.{:02} s", remaining_milliseconds / 10);
+    }
+
+    format!(
+        "{}m {}.{:02}s",
+        seconds / 60,
+        seconds % 60,
+        remaining_milliseconds / 10
+    )
 }
 
 fn show_why(crate_name: &str) -> std::io::Result<()> {
