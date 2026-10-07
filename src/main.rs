@@ -14,27 +14,21 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Build in release mode.
     #[arg(long)]
     release: bool,
 
-    /// Enable one or more Cargo features (comma-separated or repeated).
     #[arg(long, value_delimiter = ',')]
     features: Vec<String>,
 
-    /// Build only the selected package.
     #[arg(short = 'p', long)]
     package: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Show recorded build summaries.
     History,
 
-    /// Explain why a crate was rebuilt.
     Why {
-        /// Crate name to inspect.
         crate_name: String,
     },
 }
@@ -127,6 +121,14 @@ fn show_history() -> std::io::Result<()> {
                 .package
                 .as_deref()
                 .map_or(String::new(), |package| format!(" package={package}"))
+        );
+        println!(
+            "   features={}",
+            if build.features.is_empty() {
+                "none".to_string()
+            } else {
+                build.features.join(",")
+            }
         );
     }
 
