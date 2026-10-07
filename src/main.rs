@@ -14,27 +14,21 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Build in release mode.
     #[arg(long)]
     release: bool,
 
-    /// Enable one or more Cargo features (comma-separated or repeated).
     #[arg(long, value_delimiter = ',')]
     features: Vec<String>,
 
-    /// Build only the selected package.
     #[arg(short = 'p', long)]
     package: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Show recorded build summaries.
     History,
 
-    /// Explain why a crate was rebuilt.
     Why {
-        /// Crate name to inspect.
         crate_name: String,
     },
 }
@@ -66,8 +60,8 @@ fn main() {
             Ok(previous) => {
                 let rebuilt = report.compiled.iter().filter(|build| !build.fresh).count();
                 let fresh = report.compiled.iter().filter(|build| build.fresh).count();
-                let previous_build = history::latest_for(&previous, &report);
-                let previous_count = previous_build.map_or(0, |build| build.compiled.len());
+                let previous_count =
+                    history::latest_for(&previous, &report).map_or(0, |build| build.compiled.len());
 
                 println!("Cargo Rebuild Analyzer");
                 println!();

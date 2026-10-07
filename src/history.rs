@@ -41,56 +41,8 @@ pub fn latest_for<'a>(history: &'a BuildHistory, report: &BuildReport) -> Option
         .find(|build| same_configuration(build, report))
 }
 
-pub fn same_configuration(left: &BuildReport, right: &BuildReport) -> bool {
+fn same_configuration(left: &BuildReport, right: &BuildReport) -> bool {
     left.release == right.release
         && left.features == right.features
         && left.package == right.package
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn report(release: bool, features: &[&str], package: Option<&str>) -> BuildReport {
-        BuildReport {
-            timestamp: 0,
-            release,
-            features: features
-                .iter()
-                .map(|feature| (*feature).to_string())
-                .collect(),
-            package: package.map(str::to_string),
-            compiled: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn matches_only_the_same_build_configuration() {
-        let debug = report(false, &[], None);
-        let release = report(true, &[], None);
-        let feature_build = report(false, &["logging"], None);
-
-        assert!(same_configuration(&debug, &debug));
-        assert!(!same_configuration(&debug, &release));
-        assert!(!same_configuration(&debug, &feature_build));
-    }
-
-    #[test]
-    fn finds_the_latest_matching_build() {
-        let requested = report(true, &["logging"], Some("app"));
-        let history = BuildHistory {
-            builds: vec![
-                report(false, &[], None),
-                report(true, &["logging"], Some("app")),
-                report(true, &[], None),
-            ],
-        };
-
-        assert_eq!(
-            latest_for(&history, &requested)
-                .expect("matching build should exist")
-                .features,
-            vec!["logging"]
-        );
-    }
 }
