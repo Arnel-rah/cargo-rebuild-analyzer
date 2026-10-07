@@ -20,6 +20,8 @@ The project currently provides the MVP:
 - compares a build with the latest matching profile, feature set, and package;
 - exposes `history` and `why <crate>` commands;
 - validates package and feature names before starting a build.
+- measures total build duration and estimates the portion associated with
+  rebuilt crates.
 
 ## Requirements
 
@@ -120,11 +122,18 @@ Crates analyzed: 30
 Crates rebuilt: 2
 Crates unchanged: 28
 Previous matching build: 30 crate(s) analyzed
+Build duration: 12.34 s
+Estimated rebuild time: 0.82 s
 
 ⚠ openssl-sys 0.9.110
   Target: build script
   Likely cause: native compilation
 ```
+
+The estimated rebuild time is a proportional estimate based on the ratio of
+rebuilt artifacts to analyzed artifacts. Cargo's JSON stream does not expose a
+reliable duration for each individual `compiler-artifact`, so this value is an
+indicator rather than a per-crate profiler.
 
 Cargo build-script targets are associated with their package instead of being
 reported only as the generic `build-script-build` target. Existing history

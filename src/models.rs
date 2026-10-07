@@ -17,6 +17,10 @@ fn default_target_kind() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildReport {
     pub timestamp: u64,
+    #[serde(default)]
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub estimated_wasted_ms: u64,
     pub release: bool,
     pub features: Vec<String>,
     pub package: Option<String>,
