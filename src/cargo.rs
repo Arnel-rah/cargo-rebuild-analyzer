@@ -14,6 +14,10 @@ pub struct BuildOptions {
 pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
     validate_options(options)?;
 
+    let mut features = options.features.clone();
+    features.sort();
+    features.dedup();
+
     let mut command = Command::new("cargo");
     command.args(["build", "--message-format=json"]);
 
@@ -21,8 +25,8 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         command.arg("--release");
     }
 
-    if !options.features.is_empty() {
-        command.args(["--features", &options.features.join(",")]);
+    if !features.is_empty() {
+        command.args(["--features", &features.join(",")]);
     }
 
     if let Some(package) = &options.package {
@@ -55,7 +59,7 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
     Ok(BuildReport {
         timestamp,
         release: options.release,
-        features: options.features.clone(),
+        features,
         package: options.package.clone(),
         compiled,
     })
