@@ -8,9 +8,9 @@ pub fn parse_message(line: &str) -> Option<CrateBuild> {
         return None;
     }
 
-    let name = message.get("target")?.get("name")?.as_str()?.to_string();
-
     let package_id = message.get("package_id")?.as_str()?;
+    let name = package_name(package_id)?;
+    let target_kind = target_kind(&message)?;
 
     let version = package_id
         .rsplit_once('#')?
@@ -23,27 +23,52 @@ pub fn parse_message(line: &str) -> Option<CrateBuild> {
         .get("fresh")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let likely_cause = likely_cause(&message, &name);
+    let likely_cause = likely_cause(&target_kind, &name);
 
     Some(CrateBuild {
         name,
         version,
+        target_kind,
         fresh,
         likely_cause,
     })
 }
 
-fn likely_cause(message: &Value, name: &str) -> String {
-    if message
-        .get("target")
-        .and_then(|target| target.get("kind"))
-        .and_then(Value::as_array)
-        .is_some_and(|kinds| {
-            kinds
-                .iter()
-                .any(|kind| kind.as_str() == Some("custom-build"))
-        })
+fn package_name(package_id: &str) -> Option<String> {
+    package_id
+        .rsplit_once('#')?
+        .1
+        .rsplit_once('@')?
+        .0
+        .to_string()
+        .into()
+}
+
+fn target_kind(message: &Value) -> Option<String> {
+    let kinds = message.get("target")?.get("kind")?.as_array()?;
+    if kinds
+        .iter()
+        .any(|kind| kind.as_str() == Some("custom-build"))
     {
+        return Some("build script".to_string());
+    }
+
+    kinds
+        .first()
+        .and_then(Value::as_str)
+        .map(|kind| match kind {
+            "lib" => "library",
+            "bin" => "binary",
+            "proc-macro" => "proc-macro",
+            "test" => "test",
+            "bench" => "benchmark",
+            other => other,
+        })
+        .map(str::to_string)
+}
+
+fn likely_cause(target_kind: &str, name: &str) -> String {
+    if target_kind == "build script" {
         return "build script".to_string();
     }
 
@@ -63,10 +88,7 @@ mod tests {
         let json = r#"{
             "reason": "compiler-artifact",
             "package_id": "registry+https://github.com/rust-lang/crates.io-index#tokio@1.48.0",
-            "target": {
-                "name": "tokio",
-                "kind": ["lib"]
-            },
+            "target": {"name": "tokio", "kind": ["lib"]},
             "fresh": false
         }"#;
 
@@ -74,6 +96,7 @@ mod tests {
 
         assert_eq!(result.name, "tokio");
         assert_eq!(result.version, "1.48.0");
+        assert_eq!(result.target_kind, "library");
         assert!(!result.fresh);
         assert_eq!(result.likely_cause, "source or dependency change");
     }
@@ -103,6 +126,8 @@ mod tests {
         let result = parse_message(message).unwrap();
 
         assert!(result.fresh);
+        assert_eq!(result.name, "demo");
+        assert_eq!(result.target_kind, "build script");
         assert_eq!(result.likely_cause, "build script");
     }
 }

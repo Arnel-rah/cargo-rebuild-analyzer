@@ -4,8 +4,14 @@ use serde::{Deserialize, Serialize};
 pub struct CrateBuild {
     pub name: String,
     pub version: String,
+    #[serde(default = "default_target_kind")]
+    pub target_kind: String,
     pub fresh: bool,
     pub likely_cause: String,
+}
+
+fn default_target_kind() -> String {
+    "unknown".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

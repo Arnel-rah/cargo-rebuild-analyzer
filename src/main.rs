@@ -28,9 +28,7 @@ struct Cli {
 enum Commands {
     History,
 
-    Why {
-        crate_name: String,
-    },
+    Why { crate_name: String },
 }
 
 fn main() {
@@ -75,6 +73,7 @@ fn main() {
 
                 for crate_build in report.compiled.iter().filter(|build| !build.fresh) {
                     println!("⚠ {} {}", crate_build.name, crate_build.version);
+                    println!("  Target: {}", crate_build.target_kind);
                     println!("  Likely cause: {}", crate_build.likely_cause);
                 }
 
@@ -160,6 +159,13 @@ fn show_why(crate_name: &str) -> std::io::Result<()> {
     causes.sort_unstable();
     causes.dedup();
     println!("  Likely cause: {}", causes.join(", "));
+    let mut targets: Vec<&str> = observations
+        .iter()
+        .map(|crate_build| crate_build.target_kind.as_str())
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    println!("  Target: {}", targets.join(", "));
 
     Ok(())
 }

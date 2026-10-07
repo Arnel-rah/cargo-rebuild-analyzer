@@ -122,8 +122,14 @@ Crates unchanged: 28
 Previous matching build: 30 crate(s) analyzed
 
 ⚠ openssl-sys 0.9.110
+  Target: build script
   Likely cause: native compilation
 ```
+
+Cargo build-script targets are associated with their package instead of being
+reported only as the generic `build-script-build` target. Existing history
+created before this field was added remains readable and displays
+`Target: unknown` for those older records.
 
 ## History storage
 
