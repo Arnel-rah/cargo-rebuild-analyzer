@@ -24,7 +24,17 @@ pub struct BuildReport {
     pub release: bool,
     pub features: Vec<String>,
     pub package: Option<String>,
+    #[serde(default)]
+    pub root_package: Option<String>,
+    #[serde(default)]
+    pub dependencies: Vec<DependencyNode>,
     pub compiled: Vec<CrateBuild>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencyNode {
+    pub package: String,
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

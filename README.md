@@ -22,6 +22,8 @@ The project currently provides the MVP:
 - validates package and feature names before starting a build.
 - measures total build duration and estimates the portion associated with
   rebuilt crates.
+- stores Cargo's resolved dependency graph and displays a dependency path for
+  `why <crate>` when available.
 
 ## Requirements
 
@@ -96,8 +98,20 @@ cargo run -- why serde_json
 ```
 
 The command reports how many recorded rebuilds were found and the likely
-causes. An error is returned when no rebuild for the requested crate exists in
-the history.
+causes. It also displays the dependency chain from the analyzed package to the
+crate when Cargo's resolved graph contains a path:
+
+```text
+serde_json
+  Rebuilt 2 time(s)
+  Likely cause: source or dependency change
+  Target: library
+  Dependency chain: cargo-rebuild-analyzer -> serde_json
+```
+
+An error is returned when no rebuild for the requested crate exists in the
+history. History records created before dependency graph support remain
+readable, but do not contain a dependency chain.
 
 ## Configuration-aware comparisons
 
