@@ -28,7 +28,16 @@ struct Cli {
 enum Commands {
     History,
 
-    Why { crate_name: String },
+    Why {
+        crate_name: String,
+    },
+
+    /// Show a detailed report for the latest recorded build.
+    Report {
+        /// Output the report as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() {
@@ -38,6 +47,7 @@ fn main() {
         let result = match command {
             Commands::History => show_history(),
             Commands::Why { crate_name } => show_why(&crate_name),
+            Commands::Report { json } => show_report(json),
         };
 
         if let Err(error) = result {
@@ -139,6 +149,80 @@ fn show_history() -> std::io::Result<()> {
                 build.features.join(",")
             }
         );
+    }
+
+    Ok(())
+}
+
+fn show_report(json: bool) -> std::io::Result<()> {
+    let history = history::load()?;
+    let build = history.builds.last().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no build recorded; run the analyzer first",
+        )
+    })?;
+    let rebuilt: Vec<_> = build
+        .compiled
+        .iter()
+        .filter(|crate_build| !crate_build.fresh)
+        .collect();
+    let fresh = build.compiled.len().saturating_sub(rebuilt.len());
+
+    if json {
+        let report = serde_json::json!({
+            "timestamp": build.timestamp,
+            "profile": if build.release { "release" } else { "debug" },
+            "features": build.features,
+            "package": build.package,
+            "crates_analyzed": build.compiled.len(),
+            "crates_rebuilt": rebuilt.len(),
+            "crates_unchanged": fresh,
+            "duration_ms": build.duration_ms,
+            "estimated_wasted_ms": build.estimated_wasted_ms,
+            "rebuilt": rebuilt,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).map_err(|error| {
+                std::io::Error::other(format!("could not serialize report: {error}"))
+            })?
+        );
+        return Ok(());
+    }
+
+    println!("Cargo Rebuild Analyzer report");
+    println!();
+    println!(
+        "Profile: {}",
+        if build.release { "release" } else { "debug" }
+    );
+    println!("Crates analyzed: {}", build.compiled.len());
+    println!("Crates rebuilt: {}", rebuilt.len());
+    println!("Crates unchanged: {fresh}");
+    println!("Build duration: {}", format_duration(build.duration_ms));
+    println!(
+        "Estimated wasted time: {}",
+        format_duration(build.estimated_wasted_ms)
+    );
+    if let Some(package) = &build.package {
+        println!("Package: {package}");
+    }
+    if !build.features.is_empty() {
+        println!("Features: {}", build.features.join(", "));
+    }
+    if !rebuilt.is_empty() {
+        println!();
+        println!("Rebuilt crates:");
+        for crate_build in rebuilt {
+            println!(
+                "- {} {} ({}, {})",
+                crate_build.name,
+                crate_build.version,
+                crate_build.target_kind,
+                crate_build.likely_cause
+            );
+        }
     }
 
     Ok(())

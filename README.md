@@ -24,6 +24,7 @@ The project currently provides the MVP:
   rebuilt crates.
 - stores Cargo's resolved dependency graph and displays a dependency path for
   `why <crate>` when available.
+- provides a detailed `report` command with human-readable and JSON output.
 
 ## Requirements
 
@@ -112,6 +113,24 @@ serde_json
 An error is returned when no rebuild for the requested crate exists in the
 history. History records created before dependency graph support remain
 readable, but do not contain a dependency chain.
+
+## Detailed reports
+
+Display a report for the latest recorded build:
+
+```bash
+cargo run -- report
+```
+
+Export the same report as JSON for CI or other tooling:
+
+```bash
+cargo run -- report --json
+```
+
+The report includes the profile, features, package selection, analyzed and
+rebuilt crate counts, build duration, estimated wasted time, and the list of
+rebuilt crates with their target type and likely cause.
 
 ## Configuration-aware comparisons
 
