@@ -2,7 +2,7 @@ use std::io;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use crate::models::{BuildReport, CrateBuild};
+use crate::models::{BuildReport, CrateBuild, DependencyNode};
 use crate::parser::parse_message;
 
 #[derive(Debug, Default)]
@@ -64,6 +64,7 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| io::Error::other(format!("system clock error: {error}")))?
         .as_secs();
+    let (root_package, dependencies) = dependency_graph(options.package.as_deref())?;
 
     Ok(BuildReport {
         timestamp,
@@ -72,8 +73,70 @@ pub fn run_build(options: &BuildOptions) -> io::Result<BuildReport> {
         release: options.release,
         features,
         package: options.package.clone(),
+        root_package,
+        dependencies,
         compiled,
     })
+}
+
+fn dependency_graph(
+    selected_package: Option<&str>,
+) -> io::Result<(Option<String>, Vec<DependencyNode>)> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "cargo metadata failed with status: {}",
+            output.status
+        )));
+    }
+
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("could not parse cargo metadata: {error}"),
+        )
+    })?;
+    let packages = metadata["packages"].as_array().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "cargo metadata has no packages")
+    })?;
+    let names: std::collections::HashMap<_, _> = packages
+        .iter()
+        .filter_map(|package| {
+            Some((
+                package["id"].as_str()?.to_string(),
+                package["name"].as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    let root_id = selected_package
+        .and_then(|name| packages.iter().find(|package| package["name"] == name))
+        .and_then(|package| package["id"].as_str().map(str::to_string))
+        .or_else(|| metadata["resolve"]["root"].as_str().map(str::to_string));
+    let nodes = metadata["resolve"]["nodes"].as_array().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "cargo metadata has no resolve graph",
+        )
+    })?;
+    let graph = nodes
+        .iter()
+        .filter_map(|node| {
+            let package_id = node["id"].as_str()?;
+            let package = names.get(package_id)?.clone();
+            let dependencies = node["dependencies"]
+                .as_array()?
+                .iter()
+                .filter_map(|dependency| names.get(dependency.as_str()?).cloned())
+                .collect();
+            Some(DependencyNode {
+                package,
+                dependencies,
+            })
+        })
+        .collect();
+    Ok((root_id.and_then(|id| names.get(&id).cloned()), graph))
 }
 
 fn validate_options(options: &BuildOptions) -> io::Result<()> {

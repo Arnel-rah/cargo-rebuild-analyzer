@@ -195,6 +195,45 @@ fn show_why(crate_name: &str) -> std::io::Result<()> {
     targets.sort_unstable();
     targets.dedup();
     println!("  Target: {}", targets.join(", "));
+    if let Some(build) = history
+        .builds
+        .iter()
+        .rev()
+        .find(|build| build.compiled.iter().any(|item| item.name == crate_name))
+        && let Some(path) = dependency_path(build, crate_name)
+    {
+        println!("  Dependency chain: {}", path.join(" -> "));
+    }
 
     Ok(())
+}
+
+fn dependency_path(report: &models::BuildReport, target: &str) -> Option<Vec<String>> {
+    let root = report.root_package.as_ref()?;
+    let mut path = Vec::new();
+    find_dependency_path(&report.dependencies, root, target, &mut path).then_some(path)
+}
+
+fn find_dependency_path(
+    graph: &[models::DependencyNode],
+    current: &str,
+    target: &str,
+    path: &mut Vec<String>,
+) -> bool {
+    path.push(current.to_string());
+    if current == target {
+        return true;
+    }
+    let dependencies = graph
+        .iter()
+        .find(|node| node.package == current)
+        .map(|node| node.dependencies.as_slice())
+        .unwrap_or_default();
+    for dependency in dependencies {
+        if !path.contains(dependency) && find_dependency_path(graph, dependency, target, path) {
+            return true;
+        }
+    }
+    path.pop();
+    false
 }
