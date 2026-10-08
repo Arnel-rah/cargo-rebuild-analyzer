@@ -116,8 +116,9 @@ For GitHub Actions, fail a job when a build rebuilds more than five crates:
 
 This repository includes a complete workflow at
 `.github/workflows/ci.yml`. It checks formatting, tests, Clippy, and runs the
-analyzer with a permissive rebuild budget. Projects adopting the analyzer can
-replace `999` with their own rebuild limit.
+analyzer with a permissive rebuild budget. The workflow also publishes the
+JSON results as a summary in the GitHub Actions interface. Projects adopting
+the analyzer can replace `999` with their own rebuild limit.
 
 ## Inspecting the history
 
