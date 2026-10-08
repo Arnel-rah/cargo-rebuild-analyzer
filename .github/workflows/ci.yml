@@ -36,5 +36,27 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Check rebuild budget
-        run: cargo run --release -- --ci --max-rebuilds 999
+      - name: Check rebuild budget and publish summary
+        shell: bash
+        run: |
+          set +e
+          cargo run --release -- --ci --json --max-rebuilds 999 > rebuild-report.json
+          analyzer_status=$?
+          set -e
+
+          echo "## Cargo rebuild report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ---: |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | \`$(jq -r '.status' rebuild-report.json)\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Crates analyzed | $(jq -r '.crates_analyzed' rebuild-report.json) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Crates rebuilt | $(jq -r '.crates_rebuilt' rebuild-report.json) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Estimated wasted time | $(jq -r '.estimated_wasted_ms' rebuild-report.json) ms |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$(jq '.crates_rebuilt' rebuild-report.json)" -gt 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Rebuilt crates" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.rebuilt[] | "- **\(.name)** \(.version): \(.likely_cause)"' rebuild-report.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$analyzer_status"
