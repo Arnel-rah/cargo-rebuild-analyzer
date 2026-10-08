@@ -25,6 +25,18 @@ struct Cli {
 
     #[arg(short = 'p', long)]
     package: Option<String>,
+
+    /// Return a non-zero status when a configured rebuild threshold is exceeded.
+    #[arg(long)]
+    ci: bool,
+
+    /// Maximum allowed rebuilt crates in CI mode.
+    #[arg(long, requires = "ci")]
+    max_rebuilds: Option<usize>,
+
+    /// Maximum allowed estimated wasted build time in milliseconds in CI mode.
+    #[arg(long, requires = "ci")]
+    max_wasted_time_ms: Option<u64>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -103,9 +115,22 @@ fn main() {
                     println!("  Likely cause: {}", crate_build.likely_cause);
                 }
 
+                let estimated_wasted_ms = report.estimated_wasted_ms;
                 if let Err(error) = history::record(previous, report) {
                     eprintln!("Error recording build history: {error}");
                     std::process::exit(1);
+                }
+
+                if cli.ci
+                    && let Some(message) = threshold_violation(
+                        rebuilt,
+                        estimated_wasted_ms,
+                        cli.max_rebuilds,
+                        cli.max_wasted_time_ms,
+                    )
+                {
+                    eprintln!("CI threshold exceeded: {message}");
+                    std::process::exit(2);
                 }
             }
             Err(error) => {
@@ -118,6 +143,31 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn threshold_violation(
+    rebuilt: usize,
+    estimated_wasted_ms: u64,
+    max_rebuilds: Option<usize>,
+    max_wasted_time_ms: Option<u64>,
+) -> Option<String> {
+    if let Some(limit) = max_rebuilds
+        && rebuilt > limit
+    {
+        return Some(format!("{rebuilt} rebuilt crates (limit: {limit})"));
+    }
+
+    if let Some(limit) = max_wasted_time_ms
+        && estimated_wasted_ms > limit
+    {
+        return Some(format!(
+            "{} estimated wasted time (limit: {} ms)",
+            format_duration(estimated_wasted_ms),
+            limit
+        ));
+    }
+
+    None
 }
 
 fn show_history(crate_filter: Option<&str>) -> std::io::Result<()> {
@@ -439,4 +489,26 @@ fn find_dependency_path(
     }
     path.pop();
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::threshold_violation;
+
+    #[test]
+    fn reports_rebuild_threshold_violations() {
+        assert_eq!(
+            threshold_violation(3, 0, Some(2), None),
+            Some("3 rebuilt crates (limit: 2)".to_string())
+        );
+        assert_eq!(threshold_violation(2, 0, Some(2), None), None);
+    }
+
+    #[test]
+    fn reports_wasted_time_threshold_violations() {
+        assert_eq!(
+            threshold_violation(0, 1_500, None, Some(1_000)),
+            Some("1.50 s estimated wasted time (limit: 1000 ms)".to_string())
+        );
+    }
 }
