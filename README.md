@@ -25,6 +25,8 @@ The project currently provides the MVP:
 - stores Cargo's resolved dependency graph and displays a dependency path for
   `why <crate>` when available.
 - provides a detailed `report` command with human-readable and JSON output.
+- refines likely rebuild causes using the previous matching build and rebuilt
+  dependency relationships.
 
 ## Requirements
 
@@ -167,6 +169,14 @@ The estimated rebuild time is a proportional estimate based on the ratio of
 rebuilt artifacts to analyzed artifacts. Cargo's JSON stream does not expose a
 reliable duration for each individual `compiler-artifact`, so this value is an
 indicator rather than a per-crate profiler.
+
+Likely causes currently include:
+
+- `build script`;
+- `native compilation`;
+- `dependency rebuilt`;
+- `source or dependency change`;
+- `initial build or configuration change`.
 
 Cargo build-script targets are associated with their package instead of being
 reported only as the generic `build-script-build` target. Existing history
