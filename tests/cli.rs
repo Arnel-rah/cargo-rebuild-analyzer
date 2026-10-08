@@ -31,6 +31,7 @@ fn prints_help_with_available_commands() {
     assert!(stdout.contains("why"));
     assert!(stdout.contains("report"));
     assert!(stdout.contains("--ci"));
+    assert!(stdout.contains("--json"));
     assert!(stdout.contains("--max-rebuilds"));
 }
 
@@ -113,5 +114,25 @@ fn ci_mode_accepts_a_generous_rebuild_budget() {
 
     assert!(output.status.success(), "stderr: {stderr}");
     assert!(history.exists());
+    fs::remove_dir_all(directory).expect("failed to remove test history directory");
+}
+
+#[test]
+fn ci_json_output_contains_threshold_status() {
+    let directory = std::env::temp_dir().join(format!(
+        "cargo-rebuild-analyzer-json-ci-test-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).expect("failed to create test history directory");
+    let history = directory.join("history.json");
+
+    let output = run_cli_with_history(&["--ci", "--json", "--max-rebuilds", "999"], &history);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: Value = serde_json::from_str(&stdout).expect("CI output should be valid JSON");
+
+    assert!(output.status.success());
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["threshold_violation"], Value::Null);
+    assert!(report.get("rebuilt").is_some());
     fs::remove_dir_all(directory).expect("failed to remove test history directory");
 }
