@@ -30,6 +30,10 @@ struct Cli {
     #[arg(long)]
     ci: bool,
 
+    /// Print the build result as machine-readable JSON.
+    #[arg(long)]
+    json: bool,
+
     /// Maximum allowed rebuilt crates in CI mode.
     #[arg(long, requires = "ci")]
     max_rebuilds: Option<usize>,
@@ -94,41 +98,58 @@ fn main() {
                 let previous_count =
                     history::latest_for(&previous, &report).map_or(0, |build| build.compiled.len());
 
-                println!("Cargo Rebuild Analyzer");
-                println!();
-                println!("Crates analyzed: {}", report.compiled.len());
-                println!("Crates rebuilt: {rebuilt}");
-                println!("Crates unchanged: {fresh}");
-                println!("Build duration: {}", format_duration(report.duration_ms));
-                println!(
-                    "Estimated rebuild time: {}",
-                    format_duration(report.estimated_wasted_ms)
-                );
-                if previous_count > 0 {
-                    println!("Previous matching build: {previous_count} crate(s) analyzed");
-                }
-                println!();
+                if !cli.json {
+                    println!("Cargo Rebuild Analyzer");
+                    println!();
+                    println!("Crates analyzed: {}", report.compiled.len());
+                    println!("Crates rebuilt: {rebuilt}");
+                    println!("Crates unchanged: {fresh}");
+                    println!("Build duration: {}", format_duration(report.duration_ms));
+                    println!(
+                        "Estimated rebuild time: {}",
+                        format_duration(report.estimated_wasted_ms)
+                    );
+                    if previous_count > 0 {
+                        println!("Previous matching build: {previous_count} crate(s) analyzed");
+                    }
+                    println!();
 
-                for crate_build in report.compiled.iter().filter(|build| !build.fresh) {
-                    println!("⚠ {} {}", crate_build.name, crate_build.version);
-                    println!("  Target: {}", crate_build.target_kind);
-                    println!("  Likely cause: {}", crate_build.likely_cause);
+                    for crate_build in report.compiled.iter().filter(|build| !build.fresh) {
+                        println!("⚠ {} {}", crate_build.name, crate_build.version);
+                        println!("  Target: {}", crate_build.target_kind);
+                        println!("  Likely cause: {}", crate_build.likely_cause);
+                    }
                 }
 
                 let estimated_wasted_ms = report.estimated_wasted_ms;
-                if let Err(error) = history::record(previous, report) {
-                    eprintln!("Error recording build history: {error}");
-                    std::process::exit(1);
-                }
-
-                if cli.ci
-                    && let Some(message) = threshold_violation(
+                let violation = if cli.ci {
+                    threshold_violation(
                         rebuilt,
                         estimated_wasted_ms,
                         cli.max_rebuilds,
                         cli.max_wasted_time_ms,
                     )
+                } else {
+                    None
+                };
+                if cli.json
+                    && let Err(error) = print_build_json(
+                        &report,
+                        rebuilt,
+                        fresh,
+                        previous_count,
+                        violation.as_deref(),
+                    )
                 {
+                    eprintln!("Error serializing build report: {error}");
+                    std::process::exit(1);
+                }
+                if let Err(error) = history::record(previous, report) {
+                    eprintln!("Error recording build history: {error}");
+                    std::process::exit(1);
+                }
+
+                if let Some(message) = violation {
                     eprintln!("CI threshold exceeded: {message}");
                     std::process::exit(2);
                 }
@@ -143,6 +164,36 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn print_build_json(
+    report: &models::BuildReport,
+    rebuilt: usize,
+    fresh: usize,
+    previous_count: usize,
+    violation: Option<&str>,
+) -> std::io::Result<()> {
+    let payload = serde_json::json!({
+        "status": if violation.is_some() { "threshold_exceeded" } else { "passed" },
+        "profile": if report.release { "release" } else { "debug" },
+        "features": report.features,
+        "package": report.package,
+        "crates_analyzed": report.compiled.len(),
+        "crates_rebuilt": rebuilt,
+        "crates_unchanged": fresh,
+        "duration_ms": report.duration_ms,
+        "estimated_wasted_ms": report.estimated_wasted_ms,
+        "previous_matching_crates": previous_count,
+        "threshold_violation": violation,
+        "rebuilt": report.compiled.iter().filter(|build| !build.fresh).collect::<Vec<_>>(),
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&payload).map_err(|error| std::io::Error::other(format!(
+            "could not serialize report: {error}"
+        )))?
+    );
+    Ok(())
 }
 
 fn threshold_violation(

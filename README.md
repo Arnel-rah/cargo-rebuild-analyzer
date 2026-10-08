@@ -93,11 +93,19 @@ when a configured threshold is exceeded:
 cargo run -- --ci --max-rebuilds 5
 cargo run -- --ci --max-wasted-time-ms 1000
 cargo run -- --ci --max-rebuilds 5 --max-wasted-time-ms 1000
+cargo run -- --ci --json --max-rebuilds 5
 ```
 
 The limits are optional, but they require `--ci`. A successful check exits
 with status `0`; invalid input or a Cargo failure exits with status `1`; a
 threshold violation exits with status `2`.
+
+Add `--json` to emit one machine-readable build summary containing the CI
+status, thresholds result, counts, duration, and rebuilt crates:
+
+```bash
+cargo run -- --ci --json --max-rebuilds 5 > rebuild-report.json
+```
 
 For GitHub Actions, fail a job when a build rebuilds more than five crates:
 
