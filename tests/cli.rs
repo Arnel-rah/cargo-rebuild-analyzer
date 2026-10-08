@@ -30,6 +30,8 @@ fn prints_help_with_available_commands() {
     assert!(stdout.contains("history"));
     assert!(stdout.contains("why"));
     assert!(stdout.contains("report"));
+    assert!(stdout.contains("--ci"));
+    assert!(stdout.contains("--max-rebuilds"));
 }
 
 #[test]
@@ -85,4 +87,31 @@ fn unknown_crate_returns_an_error() {
 
     assert!(!output.status.success());
     assert!(stderr.contains("no rebuild recorded for crate 'missing-crate'"));
+}
+
+#[test]
+fn ci_thresholds_require_ci_mode() {
+    let output = run_cli(&["--max-rebuilds", "1"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("--max-rebuilds"));
+    assert!(stderr.contains("--ci"));
+}
+
+#[test]
+fn ci_mode_accepts_a_generous_rebuild_budget() {
+    let directory = std::env::temp_dir().join(format!(
+        "cargo-rebuild-analyzer-ci-test-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).expect("failed to create test history directory");
+    let history = directory.join("history.json");
+
+    let output = run_cli_with_history(&["--ci", "--max-rebuilds", "999"], &history);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(history.exists());
+    fs::remove_dir_all(directory).expect("failed to remove test history directory");
 }

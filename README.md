@@ -19,7 +19,7 @@ The project currently provides the MVP:
 - records build reports in `target/rebuild-analyzer/history.json`;
 - compares a build with the latest matching profile, feature set, and package;
 - exposes `history` and `why <crate>` commands;
-- validates package and feature names before starting a build.
+- validates package and feature names before starting a build;
 - measures total build duration and estimates the portion associated with
   rebuilt crates.
 - stores Cargo's resolved dependency graph and displays a dependency path for
@@ -82,6 +82,29 @@ cargo run -- --package my-package
 
 Invalid package and feature names are rejected before Cargo starts compiling,
 with a list of available values.
+
+## CI thresholds
+
+Use `--ci` to make the build command enforce rebuild budgets. The build is
+still recorded in the normal history, but the process exits with status `2`
+when a configured threshold is exceeded:
+
+```bash
+cargo run -- --ci --max-rebuilds 5
+cargo run -- --ci --max-wasted-time-ms 1000
+cargo run -- --ci --max-rebuilds 5 --max-wasted-time-ms 1000
+```
+
+The limits are optional, but they require `--ci`. A successful check exits
+with status `0`; invalid input or a Cargo failure exits with status `1`; a
+threshold violation exits with status `2`.
+
+For GitHub Actions, fail a job when a build rebuilds more than five crates:
+
+```yaml
+- name: Check rebuild budget
+  run: cargo run --release -- --ci --max-rebuilds 5
+```
 
 ## Inspecting the history
 
