@@ -1,18 +1,24 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::models::{BuildHistory, BuildReport};
 
-const HISTORY_FILE: &str = "target/rebuild-analyzer/history.json";
+const DEFAULT_HISTORY_FILE: &str = "target/rebuild-analyzer/history.json";
+
+fn history_file() -> PathBuf {
+    std::env::var_os("CARGO_REBUILD_ANALYZER_HISTORY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_HISTORY_FILE))
+}
 
 pub fn load() -> io::Result<BuildHistory> {
-    let path = Path::new(HISTORY_FILE);
+    let path = history_file();
     if !path.exists() {
         return Ok(BuildHistory::default());
     }
 
-    let contents = fs::read_to_string(path)?;
+    let contents = fs::read_to_string(&path)?;
     serde_json::from_str(&contents).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -22,7 +28,7 @@ pub fn load() -> io::Result<BuildHistory> {
 }
 
 pub fn record(mut history: BuildHistory, report: BuildReport) -> io::Result<()> {
-    let path = PathBuf::from(HISTORY_FILE);
+    let path = history_file();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
