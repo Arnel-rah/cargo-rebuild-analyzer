@@ -106,6 +106,11 @@ For GitHub Actions, fail a job when a build rebuilds more than five crates:
   run: cargo run --release -- --ci --max-rebuilds 5
 ```
 
+This repository includes a complete workflow at
+`.github/workflows/ci.yml`. It checks formatting, tests, Clippy, and runs the
+analyzer with a permissive rebuild budget. Projects adopting the analyzer can
+replace `999` with their own rebuild limit.
+
 ## Inspecting the history
 
 Display all recorded builds:
