@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 
 use clap::{Parser, Subcommand};
@@ -28,7 +29,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    History,
+    /// Show recorded builds and per-crate rebuild statistics.
+    History {
+        /// Limit statistics to one crate.
+        #[arg(long = "crate")]
+        crate_name: Option<String>,
+    },
 
     Why {
         crate_name: String,
@@ -47,7 +53,7 @@ fn main() {
 
     if let Some(command) = cli.command {
         let result = match command {
-            Commands::History => show_history(),
+            Commands::History { crate_name } => show_history(crate_name.as_deref()),
             Commands::Why { crate_name } => show_why(&crate_name),
             Commands::Report { json } => show_report(json),
         };
@@ -114,7 +120,7 @@ fn main() {
     }
 }
 
-fn show_history() -> std::io::Result<()> {
+fn show_history(crate_filter: Option<&str>) -> std::io::Result<()> {
     let history = history::load()?;
 
     println!("Cargo Rebuild Analyzer history");
@@ -156,7 +162,74 @@ fn show_history() -> std::io::Result<()> {
         );
     }
 
+    let statistics = crate_statistics(&history, crate_filter);
+    if !statistics.is_empty() {
+        println!();
+        println!("Crate rebuild statistics");
+        for (name, stats) in statistics {
+            println!("{}:", name);
+            println!("  Rebuilt: {} time(s)", stats.rebuilds);
+            println!(
+                "  Estimated time: {}",
+                format_duration(stats.estimated_wasted_ms)
+            );
+            println!("  Last rebuild: {}", stats.last_timestamp);
+            println!("  Likely causes: {}", stats.causes.join(", "));
+        }
+    }
+
     Ok(())
+}
+
+#[derive(Default)]
+struct CrateStatistics {
+    rebuilds: usize,
+    estimated_wasted_ms: u64,
+    last_timestamp: u64,
+    causes: Vec<String>,
+}
+
+fn crate_statistics(
+    history: &models::BuildHistory,
+    crate_filter: Option<&str>,
+) -> BTreeMap<String, CrateStatistics> {
+    let mut statistics = BTreeMap::new();
+
+    for build in &history.builds {
+        let rebuilt_count = build
+            .compiled
+            .iter()
+            .filter(|crate_build| !crate_build.fresh)
+            .count() as u64;
+        let per_crate_estimate = build
+            .estimated_wasted_ms
+            .checked_div(rebuilt_count)
+            .unwrap_or(0);
+
+        for crate_build in build
+            .compiled
+            .iter()
+            .filter(|crate_build| !crate_build.fresh)
+        {
+            if crate_filter.is_some_and(|filter| filter != crate_build.name) {
+                continue;
+            }
+
+            let stats = statistics
+                .entry(crate_build.name.clone())
+                .or_insert_with(CrateStatistics::default);
+            stats.rebuilds += 1;
+            stats.estimated_wasted_ms =
+                stats.estimated_wasted_ms.saturating_add(per_crate_estimate);
+            stats.last_timestamp = stats.last_timestamp.max(build.timestamp);
+            if !stats.causes.contains(&crate_build.likely_cause) {
+                stats.causes.push(crate_build.likely_cause.clone());
+                stats.causes.sort();
+            }
+        }
+    }
+
+    statistics
 }
 
 fn show_report(json: bool) -> std::io::Result<()> {

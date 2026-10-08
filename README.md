@@ -94,6 +94,16 @@ cargo run -- history
 Each record includes its timestamp, profile, package, features, number of
 analyzed crates, and number of rebuilt crates.
 
+The history command also displays cumulative statistics per rebuilt crate:
+
+```bash
+cargo run -- history
+cargo run -- history --crate serde_json
+```
+
+Statistics include rebuild count, estimated associated time, last rebuild
+timestamp, and the likely causes observed across builds.
+
 Explain why a crate was rebuilt:
 
 ```bash
