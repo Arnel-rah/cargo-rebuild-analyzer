@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use clap::{Parser, Subcommand};
 
 mod cargo;
@@ -66,6 +68,9 @@ fn main() {
     match cargo::run_build(&options) {
         Ok(report) => match history::load() {
             Ok(previous) => {
+                let mut report = report;
+                let previous_matching = history::latest_for(&previous, &report);
+                refine_rebuild_causes(&mut report, previous_matching);
                 let rebuilt = report.compiled.iter().filter(|build| !build.fresh).count();
                 let fresh = report.compiled.iter().filter(|build| build.fresh).count();
                 let previous_count =
@@ -226,6 +231,47 @@ fn show_report(json: bool) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn refine_rebuild_causes(report: &mut models::BuildReport, previous: Option<&models::BuildReport>) {
+    let rebuilt_names: HashSet<String> = report
+        .compiled
+        .iter()
+        .filter(|build| !build.fresh)
+        .map(|build| build.name.clone())
+        .collect();
+    let previous_crates = previous
+        .map(|build| build.compiled.as_slice())
+        .unwrap_or_default();
+    let dependencies = report.dependencies.clone();
+
+    for crate_build in report.compiled.iter_mut().filter(|build| !build.fresh) {
+        if crate_build.target_kind.contains("build script")
+            || crate_build.likely_cause == "native compilation"
+        {
+            continue;
+        }
+
+        let dependency_rebuilt = dependencies.iter().any(|node| {
+            node.dependencies
+                .iter()
+                .any(|dependency| dependency == &crate_build.name)
+                && rebuilt_names.contains(&node.package)
+        });
+
+        crate_build.likely_cause = if dependency_rebuilt {
+            "dependency rebuilt".to_string()
+        } else if previous_crates
+            .iter()
+            .any(|build| build.name == crate_build.name && build.fresh)
+        {
+            "source or dependency change".to_string()
+        } else if previous.is_none() {
+            "initial build or configuration change".to_string()
+        } else {
+            "source or dependency change".to_string()
+        };
+    }
 }
 
 fn format_duration(milliseconds: u64) -> String {
