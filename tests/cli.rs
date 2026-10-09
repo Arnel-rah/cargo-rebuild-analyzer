@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
@@ -19,6 +20,44 @@ fn run_cli_with_history(arguments: &[&str], history: &PathBuf) -> Output {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("failed to execute cargo-rebuild-analyzer")
+}
+
+fn run_cli_in_project(arguments: &[&str], project: &PathBuf, history: &PathBuf) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_cargo-rebuild-analyzer"))
+        .args(arguments)
+        .env("CARGO_REBUILD_ANALYZER_HISTORY", history)
+        .current_dir(project)
+        .output()
+        .expect("failed to execute cargo-rebuild-analyzer")
+}
+
+fn create_fixture_project() -> (PathBuf, PathBuf) {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after UNIX epoch")
+        .as_nanos();
+    let project = std::env::temp_dir().join(format!(
+        "cargo-rebuild-analyzer-fixture-{}-{suffix}",
+        std::process::id()
+    ));
+    fs::create_dir_all(project.join("src")).expect("failed to create fixture project");
+    fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"fixture-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nbuild = \"build.rs\"\n",
+    )
+    .expect("failed to write fixture manifest");
+    fs::write(
+        project.join("build.rs"),
+        "fn main() { println!(\"cargo:rerun-if-changed=build.rs\"); }\n",
+    )
+    .expect("failed to write fixture build script");
+    fs::write(
+        project.join("src/lib.rs"),
+        "pub fn fixture_value() -> u32 { 1 }\n",
+    )
+    .expect("failed to write fixture source");
+
+    (project.clone(), project.join("history.json"))
 }
 
 #[test]
@@ -135,4 +174,65 @@ fn ci_json_output_contains_threshold_status() {
     assert_eq!(report["threshold_violation"], Value::Null);
     assert!(report.get("rebuilt").is_some());
     fs::remove_dir_all(directory).expect("failed to remove test history directory");
+}
+
+#[test]
+fn real_build_scenarios_distinguish_initial_fresh_and_source_rebuilds() {
+    let (project, history) = create_fixture_project();
+
+    let initial = run_cli_in_project(&["--json"], &project, &history);
+    assert!(initial.status.success());
+    let initial_report: Value =
+        serde_json::from_slice(&initial.stdout).expect("initial output should be valid JSON");
+    assert!(initial_report["crates_rebuilt"].as_u64().unwrap_or(0) > 0);
+
+    let unchanged = run_cli_in_project(&["--json"], &project, &history);
+    assert!(unchanged.status.success());
+    let unchanged_report: Value =
+        serde_json::from_slice(&unchanged.stdout).expect("unchanged output should be valid JSON");
+    assert_eq!(unchanged_report["crates_rebuilt"], 0);
+    assert!(unchanged_report["crates_unchanged"].as_u64().unwrap_or(0) > 0);
+
+    fs::write(
+        project.join("src/lib.rs"),
+        "pub fn fixture_value() -> u32 { 2 }\n",
+    )
+    .expect("failed to modify fixture source");
+
+    let rebuilt = run_cli_in_project(&["--json"], &project, &history);
+    assert!(rebuilt.status.success());
+    let rebuilt_report: Value =
+        serde_json::from_slice(&rebuilt.stdout).expect("rebuilt output should be valid JSON");
+    assert!(rebuilt_report["crates_rebuilt"].as_u64().unwrap_or(0) > 0);
+    assert!(rebuilt_report["estimated_wasted_ms"].as_u64().is_some());
+
+    fs::write(
+        project.join("build.rs"),
+        "fn main() { println!(\"cargo:rerun-if-changed=build.rs\"); println!(\"cargo:rustc-env=FIXTURE_CHANGED=1\"); }\n",
+    )
+    .expect("failed to modify fixture build script");
+
+    let build_script_rebuilt = run_cli_in_project(&["--json"], &project, &history);
+    assert!(build_script_rebuilt.status.success());
+    let build_script_report: Value = serde_json::from_slice(&build_script_rebuilt.stdout)
+        .expect("build script output should be valid JSON");
+    let rebuilt_build_script = build_script_report["rebuilt"]
+        .as_array()
+        .expect("rebuilt crates should be an array")
+        .iter()
+        .any(|crate_build| {
+            crate_build["name"] == "fixture-project"
+                && crate_build["target_kind"]
+                    .as_str()
+                    .is_some_and(|target| target.contains("build script"))
+                && crate_build["likely_cause"] == "build script"
+        });
+    assert!(rebuilt_build_script);
+
+    let history_contents = fs::read_to_string(&history).expect("history should be recorded");
+    let history_json: Value =
+        serde_json::from_str(&history_contents).expect("history should be valid JSON");
+    assert_eq!(history_json["builds"].as_array().map(Vec::len), Some(4));
+
+    fs::remove_dir_all(project).expect("failed to remove fixture project");
 }
